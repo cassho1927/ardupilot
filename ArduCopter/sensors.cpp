@@ -1,5 +1,22 @@
 #include "Copter.h"
 
+void Copter::read_airspeed(void)
+{
+    if (airspeed.enabled()) {
+        airspeed.read();
+        if (should_log(MASK_LOG_IMU)) {
+            DataFlash.Log_Write_Airspeed(airspeed);
+        }
+    }
+
+     // supply a new temperature to the barometer from the digital
+    // airspeed sensor if we can
+    float temperature;
+    if (airspeed.get_temperature(temperature)) {
+        barometer.set_external_temperature(temperature);
+    }
+}
+
 // return barometric altitude in centimeters
 void Copter::read_barometer(void)
 {
@@ -266,6 +283,9 @@ void Copter::update_sensor_status_flags(void)
         control_sensors_present |= MAV_SYS_STATUS_GEOFENCE;
     }
 #endif
+    if (airspeed.enabled()) {
+        control_sensors_present |= MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE;
+    }
 
     // all present sensors enabled by default except altitude and position control and motors which we will set individually
     control_sensors_enabled = control_sensors_present & (~MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL &
@@ -273,7 +293,8 @@ void Copter::update_sensor_status_flags(void)
                                                          ~MAV_SYS_STATUS_SENSOR_MOTOR_OUTPUTS &
                                                          ~MAV_SYS_STATUS_LOGGING &
                                                          ~MAV_SYS_STATUS_SENSOR_BATTERY &
-                                                         ~MAV_SYS_STATUS_GEOFENCE);
+                                                         ~MAV_SYS_STATUS_GEOFENCE &
+                                                         ~MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE);
 
     switch (control_mode) {
     case AUTO:
@@ -320,6 +341,9 @@ void Copter::update_sensor_status_flags(void)
     }
 #endif
 
+    if (airspeed.enabled() && airspeed.use()) {
+        control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE;
+    }
 
     // default to all healthy
     control_sensors_health = control_sensors_present;
@@ -419,6 +443,10 @@ void Copter::update_sensor_status_flags(void)
     // give mask of error flags to Frsky_Telemetry
     frsky_telemetry.update_sensor_status_flags(~control_sensors_health & control_sensors_enabled & control_sensors_present);
 #endif
+
+    if (airspeed.all_healthy()) {
+        control_sensors_health &= ~MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE;
+    }
 }
 
 // init visual odometry sensor
